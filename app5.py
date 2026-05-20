@@ -1,92 +1,82 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
-from scipy.stats import gaussian_kde
+from prophet import Prophet
 
-@st.cache_data
-def load_data(file_path):
-    df = pd.read_csv(file_path)
-    if 'YEAR' in df.columns:
-        df['YEAR_INT'] = df['YEAR'].astype(int)
-        df['DATE'] = pd.to_datetime(df['YEAR_INT'].astype(str), format='%Y')
-        df.set_index('DATE', inplace=True)
-    return df
+# 페이지 설정
+st.set_page_config(page_title="🌞 Sunspot Forecast", layout="wide")
+st.title("🌞 Prophet Forecast with Preprocessed Sunspot Data")
 
-def plot_advanced_sunspot_visualizations(df, sunactivity_col='SUNACTIVITY'):
-    fig, axs = plt.subplots(2, 2, figsize=(15, 12))
-    fig.suptitle("Sunspots Data Advanced Visualization", fontsize=18)
+# ----------------------------------
+# [1] 데이터 불러오기
+# ----------------------------------
+df = pd.read_csv('./sunspots_for_prophet.csv')
+df['ds'] = pd.to_datetime(df['ds'])
 
-    axs[0, 0].plot(df.index, df[sunactivity_col], color='blue')
-    axs[0, 0].set_title("Sunspot Activity Over Time")
-    axs[0, 0].set_xlabel("Year")
-    axs[0, 0].set_ylabel("Sunspot Count")
-    axs[0, 0].grid(True)
+st.subheader("📄 데이터 미리보기")
+st.dataframe(df.head())
 
-    data = df[sunactivity_col].dropna().values
-    if len(data) > 0:
-        xs = np.linspace(data.min(), data.max(), 200)
-        density = gaussian_kde(data)
-        axs[0, 1].hist(data, bins=30, density=True, alpha=0.6, color='gray', label='Histogram')
-        axs[0, 1].plot(xs, density(xs), color='red', linewidth=2, label='Density')
-    axs[0, 1].set_title("Distribution of Sunspot Activity")
-    axs[0, 1].set_xlabel("Sunspot Count")
-    axs[0, 1].set_ylabel("Density")
-    axs[0, 1].legend()
-    axs[0, 1].grid(True)
+# ----------------------------------
+# [2] Prophet 모델 정의 및 학습
+# ----------------------------------
+model = Prophet(yearly_seasonality=False, changepoint_prior_scale=0.05, seasonality_mode='additive')
+model.add_seasonality(name='sunspot_cycle', period=11, fourier_order=5)
+model.fit(df)
 
-    try:
-        df_20th = df.loc["1900":"2000"]
-        if not df_20th.empty:
-            axs[1, 0].boxplot(df_20th[sunactivity_col], vert=False)
-            axs[1, 0].grid(False) 
-    except:
-        pass
-    
-    axs[1, 0].set_title("Boxplot of Sunspot Activity (1900-2000)")
-    axs[1, 0].set_xlabel("Sunspot Count")
+# ----------------------------------
+# [3] 예측 수행
+# ----------------------------------
+future = model.make_future_dataframe(periods=30, freq='YE')
+forecast = model.predict(future)
 
-    years = df['YEAR'].values
-    sun_activity = df[sunactivity_col].values
+# ----------------------------------
+# [4] 기본 시각화
+# ----------------------------------
+st.subheader("📈 Prophet Forecast Plot")
+fig1 = model.plot(forecast)
+st.pyplot(fig1)
 
-    mask = ~np.isnan(sun_activity)
-    years_clean = years[mask]
-    sun_activity_clean = sun_activity[mask]
+st.subheader("📊 Forecast Components")
+fig2 = model.plot_components(forecast)
+st.pyplot(fig2)
 
-    if len(years_clean) > 1:
-        axs[1, 1].scatter(years_clean, sun_activity_clean, s=10, alpha=0.5, label='Data Points')
-        coef = np.polyfit(years_clean, sun_activity_clean, 1)
-        trend = np.poly1d(coef)
-        axs[1, 1].plot(years_clean, trend(years_clean), color='red', linewidth=2, label='Trend Line')
-        
-    axs[1, 1].set_title("Trend of Sunspot Activity")
-    axs[1, 1].set_xlabel("Year")
-    axs[1, 1].set_ylabel("Sunspot Count")
-    axs[1, 1].legend()
-    axs[1, 1].grid(True)
+# ----------------------------------
+# [5] 커스텀 시각화: 실제값 vs 예측값 + 신뢰구간
+# ----------------------------------
+st.subheader("📉 Custom Plot: Actual vs Predicted with Prediction Intervals")
+fig3, ax = plt.subplots(figsize=(14, 6))
 
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    return fig
+ax.plot(df["ds"], df["y"], label='Actual', color='blue', marker='o', linestyle='-')
+ax.plot(forecast["ds"], forecast["yhat"], label='Predicted', color='red', linestyle='--')
+ax.fill_between(forecast["ds"], forecast["yhat_lower"], forecast["yhat_upper"], color='pink', alpha=0.3, label='Prediction Interval')
 
-# 메인 앱
-st.title('🌞 태양흑점 데이터 분석 대시보드 🌞')
-st.markdown("""
-    이 대시보드는 태양흑점 데이터를 다양한 시각화 방법으로 보여줍니다.
-    """)
+ax.set_xlabel("Year")
+ax.set_ylabel("Sun Activity")
+ax.legend(loc='upper left')
+ax.grid(True)
 
-try:
-    # 🌟 구글 드라이브 경로 대신, 깃허브에 올린 data 폴더 경로를 사용합니다.
-    df = load_data('data/sunspots.csv')
+st.pyplot(fig3)
 
-    filtered_df = df
+# ----------------------------------
+# [6] 잔차 분석 시각화
+# ----------------------------------
+st.subheader("📉 Residual Analysis (예측 오차 분석)")
+merged = pd.merge(df, forecast[['ds', 'yhat']], on='ds', how='inner')
+merged['residual'] = merged['y'] - merged['yhat']
 
-    if not filtered_df.empty:
-        st.subheader('태양흑점 데이터 종합 시각화')
-        fig = plot_advanced_sunspot_visualizations(filtered_df)
-        st.pyplot(fig)
-    else:
-        st.warning("데이터가 없습니다.")
+fig4, ax2 = plt.subplots(figsize=(14, 4))
+ax2.plot(merged["ds"], merged["residual"], label='Residual', color='purple', marker='o', linestyle='-')
+ax2.axhline(0, color='black', linestyle='--')
 
-except Exception as e:
-    st.error(f"오류가 발생했습니다: {e}")
-    st.info("데이터 파일의 구조를 확인해주세요. 파일 경로가 올바르고 'YEAR'와 'SUNACTIVITY' 컬럼이 있어야 합니다.")
+ax2.set_xlabel("Year")
+ax2.set_ylabel("Residual")
+ax2.legend(loc='upper right')
+ax2.grid(True)
+
+st.pyplot(fig4)
+
+# ----------------------------------
+# [7] 잔차 통계 요약 출력
+# ----------------------------------
+st.subheader("📌 Residual Summary Statistics")
+st.write(merged["residual"].describe())
