@@ -3,6 +3,4 @@ pandas
 numpy
 matplotlib
 scipy
-Plaintext
-pandas
 prophet
