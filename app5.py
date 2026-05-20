@@ -10,7 +10,7 @@ st.title("🌞 Prophet Forecast with Preprocessed Sunspot Data")
 # ----------------------------------
 # [1] 데이터 불러오기
 # ----------------------------------
-df = pd.read_csv('./sunspots_for_prophet.csv')
+df = pd.read_csv('data/sunspots_for_prophet.csv')
 df['ds'] = pd.to_datetime(df['ds'])
 
 st.subheader("📄 데이터 미리보기")
